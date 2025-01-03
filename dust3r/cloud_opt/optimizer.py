@@ -96,7 +96,7 @@ class PointCloudOptimizer(BasePCOptimizer):
         for idx, pp in zip(self._get_msk_indices(msk), known_pp):
             if self.verbose:
                 print(f' (setting principal point #{idx} = {pp})')
-            self._no_grad(self._set_principal_point(idx, pp))
+            self._no_grad(self._set_principal_point(idx, pp, force=True))
 
         self.im_pp.requires_grad_(False)
 

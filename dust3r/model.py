@@ -6,6 +6,8 @@
 # --------------------------------------------------------
 from copy import deepcopy
 import torch
+from torch import nn
+
 import os
 from packaging import version
 import huggingface_hub
@@ -62,7 +64,8 @@ class AsymmetricCroCo3DStereo (
                  conf_mode=('exp', 1, inf),
                  freeze='none',
                  landscape_only=True,
-                 patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
+                #  patch_embed_cls='PatchEmbedDust3RCamParameters',
+                  patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
                  **croco_kwargs):
         self.patch_embed_cls = patch_embed_cls
         self.croco_args = fill_default_args(croco_kwargs, super().__init__)
@@ -72,6 +75,15 @@ class AsymmetricCroCo3DStereo (
         self.dec_blocks2 = deepcopy(self.dec_blocks)
         self.set_downstream_head(output_mode, head_type, landscape_only, depth_mode, conf_mode, **croco_kwargs)
         self.set_freeze(freeze)
+
+        self.intrinsics_embed_loc = "encoder"
+        self.extrinsics_embed_loc = "encoder"
+
+        self.intrinsics_embed_type = "token"
+        self.extrinsics_embed_type = "token"
+
+        self.intrinsic_encoder = nn.Linear(9, 1024) # fx, fy, cx, cy, k1, k2, p1, p2, k3 or is the 3x3 matrix
+        self.extrinsic_encoder = nn.Linear(16, 1024) # quaternion + translation, 4 + 3 -> xyzw, + tx,ty,tz (it is actually 4x4 homogeneus matrix)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, **kw):
@@ -124,9 +136,32 @@ class AsymmetricCroCo3DStereo (
         self.head1 = transpose_to_landscape(self.downstream_head1, activate=landscape_only)
         self.head2 = transpose_to_landscape(self.downstream_head2, activate=landscape_only)
 
-    def _encode_image(self, image, true_shape):
+    def _encode_image(self, image, true_shape, intrinsics_embed=None, extrinsics_embed=None):
         # embed the image into patches  (x has size B x Npatches x C)
         x, pos = self.patch_embed(image, true_shape=true_shape)
+        # torch.Size([4, 196, 1024])
+
+        
+        # adding for intrinsics
+        if intrinsics_embed is not None:                    
+
+            if self.intrinsics_embed_type == 'linear':
+                x = x + intrinsics_embed
+            elif self.intrinsics_embed_type == 'token':
+                x = torch.cat((x, intrinsics_embed.unsqueeze(1)), dim=1)
+                add_pose = pos[:, 0:1, :].clone()
+                add_pose[:, :, 0] += (pos[:, -1, 0].unsqueeze(-1) + 1)
+                pos = torch.cat((pos, add_pose), dim=1)
+
+        # adding for extrinsics
+        if extrinsics_embed is not None:
+            if self.extrinsics_embed_type == 'linerar':
+                x = x + extrinsics_embed
+            elif self.extrinsics_embed_type == 'token':
+                x = torch.cat((x, extrinsics_embed.unsqueeze(1)), dim=1)
+                add_pose = pos[:, 0:1, :].clone()
+                add_pose[:, :, 0] += (pos[:, -1, 0].unsqueeze(-1) + 1)
+                pos = torch.cat((pos, add_pose), dim=1)
 
         # add positional embedding without cls token
         assert self.enc_pos_embed is None
@@ -138,10 +173,14 @@ class AsymmetricCroCo3DStereo (
         x = self.enc_norm(x)
         return x, pos, None
 
-    def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2):
+    def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2, intrinsics_embed1=None, intrinsics_embed2=None, extrinsics_embed1=None, extrinsics_embed2=None):
+
         if img1.shape[-2:] == img2.shape[-2:]:
             out, pos, _ = self._encode_image(torch.cat((img1, img2), dim=0),
-                                             torch.cat((true_shape1, true_shape2), dim=0))
+                                             torch.cat((true_shape1, true_shape2), dim=0),
+                                             torch.cat((intrinsics_embed1, intrinsics_embed2), dim=0) if intrinsics_embed1 is not None else None,
+                                             torch.cat((extrinsics_embed1, extrinsics_embed2), dim=0) if extrinsics_embed1 is not None else None)
+            
             out, out2 = out.chunk(2, dim=0)
             pos, pos2 = pos.chunk(2, dim=0)
         else:
@@ -157,10 +196,24 @@ class AsymmetricCroCo3DStereo (
         shape1 = view1.get('true_shape', torch.tensor(img1.shape[-2:])[None].repeat(B, 1))
         shape2 = view2.get('true_shape', torch.tensor(img2.shape[-2:])[None].repeat(B, 1))
         # warning! maybe the images have different portrait/landscape orientations
+        
+        # the thing is that it seems that they are concatenating the couple of images, rather then each single one
+        # therefore probably I should do the same for the intrinsics and extrinsics
+        intrinsics1 = view1.get('camera_intrinsics', None)
+        intrinsics2 = view2.get('camera_intrinsics', None)
+
+        extrinsics1 = view1.get('camera_pose', None)
+        extrinsics2 = view2.get('camera_pose', None)
+
+        intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1))
+        intrinsics_embed2 = self.intrinsic_encoder(intrinsics2.flatten(1))
+
+        extrinsics_embed1 = self.extrinsic_encoder(extrinsics1.flatten(1))
+        extrinsics_embed2 = self.extrinsic_encoder(extrinsics2.flatten(1))
 
         if is_symmetrized(view1, view2):
             # computing half of forward pass!'
-            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1[::2], img2[::2], shape1[::2], shape2[::2])
+            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1[::2], img2[::2], shape1[::2], shape2[::2], intrinsics_embed1[::2], intrinsics_embed2[::2], extrinsics_embed1[::2], extrinsics_embed2[::2])
             feat1, feat2 = interleave(feat1, feat2)
             pos1, pos2 = interleave(pos1, pos2)
         else:
@@ -201,6 +254,19 @@ class AsymmetricCroCo3DStereo (
 
         # combine all ref images into object-centric representation
         dec1, dec2 = self._decoder(feat1, pos1, feat2, pos2)
+
+        # here we need to remove stuff that is not needed, only used to encode the cam parameters
+        if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
+            dec1, dec2 = list(dec1), list(dec2)
+            for i in range(len(dec1)):
+                dec1[i] = dec1[i][:, :-1]
+                dec2[i] = dec2[i][:, :-1]
+
+        if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
+            dec1, dec2 = list(dec1), list(dec2)
+            for i in range(len(dec1)):
+                dec1[i] = dec1[i][:, :-1]
+                dec2[i] = dec2[i][:, :-1]
 
         with torch.cuda.amp.autocast(enabled=False):
             res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)

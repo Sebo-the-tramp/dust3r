@@ -183,6 +183,9 @@ class Regr3D (Criterion, MultiLoss):
         return gt_pts1, gt_pts2, pr_pts1, pr_pts2, valid1, valid2, {}
 
     def compute_loss(self, gt1, gt2, pred1, pred2, **kw):
+        # I guess that here the loss is computed for each 3D point in each view
+        # this is great because we can have a loss for each point
+        
         gt_pts1, gt_pts2, pred_pts1, pred_pts2, mask1, mask2, monitoring = \
             self.get_all_pts3d(gt1, gt2, pred1, pred2, **kw)
         # loss on img1 side

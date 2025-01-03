@@ -11,7 +11,7 @@ from models.blocks import PatchEmbed  # noqa
 
 
 def get_patch_embed(patch_embed_cls, img_size, patch_size, enc_embed_dim):
-    assert patch_embed_cls in ['PatchEmbedDust3R', 'ManyAR_PatchEmbed']
+    assert patch_embed_cls in ['PatchEmbedDust3R', 'ManyAR_PatchEmbed', 'PatchEmbedDust3RCamParameters']
     patch_embed = eval(patch_embed_cls)(img_size, patch_size, 3, enc_embed_dim)
     return patch_embed
 
@@ -27,6 +27,51 @@ class PatchEmbedDust3R(PatchEmbed):
             x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
         x = self.norm(x)
         return x, pos
+    
+class PatchEmbedDust3RCamParameters(PatchEmbed):
+    def forward(self, x, intrinsics, extrinsics, **kw):
+        B, C, H, W = x.shape
+        assert H % self.patch_size[0] == 0, f"Input image height ({H}) is not a multiple of patch size ({self.patch_size[0]})."
+        assert W % self.patch_size[1] == 0, f"Input image width ({W}) is not a multiple of patch size ({self.patch_size[1]})."
+        
+        # Embed image patches
+        x = self.proj(x)
+        pos = self.position_getter(B, x.size(2), x.size(3), x.device)
+        if self.flatten:
+            x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
+        x = self.norm(x)
+        
+        # Embed intrinsics
+        intrinsics_embed, intrinsics_pos = self.intrinsics_embed(intrinsics)
+        
+        # Embed extrinsics
+        extrinsics_embed, extrinsics_pos = self.extrinsics_embed(extrinsics)
+        
+        # Concatenate embeddings and positional embeddings
+        x = torch.cat((x, intrinsics_embed, extrinsics_embed), dim=1)
+        pos = torch.cat((pos, intrinsics_pos, extrinsics_pos), dim=1)
+        
+        return x, pos
+    
+    def intrinsics_embed(self, intrinsics):
+        # Define the embedding process for intrinsics
+        B, C, H, W = intrinsics.shape
+        intrinsics = self.proj(intrinsics)
+        pos = self.position_getter(B, intrinsics.size(2), intrinsics.size(3), intrinsics.device)
+        if self.flatten:
+            intrinsics = intrinsics.flatten(2).transpose(1, 2)  # BCHW -> BNC
+        intrinsics = self.norm(intrinsics)
+        return intrinsics, pos
+
+    def extrinsics_embed(self, extrinsics):
+        # Define the embedding process for extrinsics
+        B, C, H, W = extrinsics.shape
+        extrinsics = self.proj(extrinsics)
+        pos = self.position_getter(B, extrinsics.size(2), extrinsics.size(3), extrinsics.device)
+        if self.flatten:
+            extrinsics = extrinsics.flatten(2).transpose(1, 2)  # BCHW -> BNC
+        extrinsics = self.norm(extrinsics)
+        return extrinsics, pos
 
 
 class ManyAR_PatchEmbed (PatchEmbed):
