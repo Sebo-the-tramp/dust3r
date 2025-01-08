@@ -199,9 +199,7 @@ class AsymmetricCroCo3DStereo (
         # Recover true_shape when available, otherwise assume that the img shape is the true one
         shape1 = view1.get('true_shape', torch.tensor(img1.shape[-2:])[None].repeat(B, 1))
         shape2 = view2.get('true_shape', torch.tensor(img2.shape[-2:])[None].repeat(B, 1))
-        # warning! maybe the images have different portrait/landscape orientations
-
-        if 
+        # warning! maybe the images have different portrait/landscape orientations        
         
         # the thing is that it seems that they are concatenating the couple of images, rather then each single one
         # therefore probably I should do the same for the intrinsics and extrinsics
