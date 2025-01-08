@@ -205,15 +205,24 @@ class AsymmetricCroCo3DStereo (
         extrinsics1 = view1.get('camera_pose', None)
         extrinsics2 = view2.get('camera_pose', None)
 
-        intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1))
-        intrinsics_embed2 = self.intrinsic_encoder(intrinsics2.flatten(1))
+        
+        if intrinsics1 is not None:            
+            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1))[::2]
+        else:
+            print("ATTENTION intrinsics are not being used")
+        if intrinsics2 is not None:
+            intrinsics_embed2 = self.intrinsic_encoder(intrinsics2.flatten(1))[::2]
 
-        extrinsics_embed1 = self.extrinsic_encoder(extrinsics1.flatten(1))
-        extrinsics_embed2 = self.extrinsic_encoder(extrinsics2.flatten(1))
+        if extrinsics1 is not None:            
+            extrinsics_embed1 = self.extrinsic_encoder(extrinsics1.flatten(1))[::2]
+        else:
+            print("ATTENTION extrinsics are not being used")
+        if extrinsics2 is not None:
+            extrinsics_embed2 = self.extrinsic_encoder(extrinsics2.flatten(1))[::2]
 
         if is_symmetrized(view1, view2):
             # computing half of forward pass!'
-            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1[::2], img2[::2], shape1[::2], shape2[::2], intrinsics_embed1[::2], intrinsics_embed2[::2], extrinsics_embed1[::2], extrinsics_embed2[::2])
+            feat1, feat2, pos1, pos2 = self._encode_image_pairs(img1[::2], img2[::2], shape1[::2], shape2[::2], intrinsics_embed1, intrinsics_embed2, extrinsics_embed1, extrinsics_embed2)
             feat1, feat2 = interleave(feat1, feat2)
             pos1, pos2 = interleave(pos1, pos2)
         else:
@@ -256,17 +265,19 @@ class AsymmetricCroCo3DStereo (
         dec1, dec2 = self._decoder(feat1, pos1, feat2, pos2)
 
         # here we need to remove stuff that is not needed, only used to encode the cam parameters
-        if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
-            dec1, dec2 = list(dec1), list(dec2)
-            for i in range(len(dec1)):
-                dec1[i] = dec1[i][:, :-1]
-                dec2[i] = dec2[i][:, :-1]
+        # only remove stuff if it was added at the beginning
+        if(view1.get('camera_intrinsics', None) is not None):            
+            if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
+                dec1, dec2 = list(dec1), list(dec2)
+                for i in range(len(dec1)):
+                    dec1[i] = dec1[i][:, :-1]
+                    dec2[i] = dec2[i][:, :-1]
 
-        if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
-            dec1, dec2 = list(dec1), list(dec2)
-            for i in range(len(dec1)):
-                dec1[i] = dec1[i][:, :-1]
-                dec2[i] = dec2[i][:, :-1]
+            if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
+                dec1, dec2 = list(dec1), list(dec2)
+                for i in range(len(dec1)):
+                    dec1[i] = dec1[i][:, :-1]
+                    dec2[i] = dec2[i][:, :-1]
 
         with torch.cuda.amp.autocast(enabled=False):
             res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
