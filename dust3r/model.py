@@ -58,15 +58,17 @@ class AsymmetricCroCo3DStereo (
     """
 
     def __init__(self,
-                 output_mode='pts3d',
-                 head_type='linear',
-                 depth_mode=('exp', -inf, inf),
-                 conf_mode=('exp', 1, inf),
-                 freeze='none',
-                 landscape_only=True,
-                #  patch_embed_cls='PatchEmbedDust3RCamParameters',
-                  patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
-                 **croco_kwargs):
+                output_mode='pts3d',
+                head_type='linear',
+                depth_mode=('exp', -inf, inf),
+                conf_mode=('exp', 1, inf),
+                freeze='none',
+                landscape_only=True,                
+                patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
+                use_intrinsics=False,
+                use_extrinsics=False,
+                **croco_kwargs):
+        
         self.patch_embed_cls = patch_embed_cls
         self.croco_args = fill_default_args(croco_kwargs, super().__init__)
         super().__init__(**croco_kwargs)
@@ -75,6 +77,9 @@ class AsymmetricCroCo3DStereo (
         self.dec_blocks2 = deepcopy(self.dec_blocks)
         self.set_downstream_head(output_mode, head_type, landscape_only, depth_mode, conf_mode, **croco_kwargs)
         self.set_freeze(freeze)
+
+        self.use_intrinsics = use_intrinsics
+        self.use_extrinsics = use_extrinsics
 
         self.intrinsics_embed_loc = "encoder"
         self.extrinsics_embed_loc = "encoder"
@@ -143,8 +148,7 @@ class AsymmetricCroCo3DStereo (
 
         
         # adding for intrinsics
-        if intrinsics_embed is not None:                    
-
+        if intrinsics_embed is not None and self.use_intrinsics:
             if self.intrinsics_embed_type == 'linear':
                 x = x + intrinsics_embed
             elif self.intrinsics_embed_type == 'token':
@@ -154,7 +158,7 @@ class AsymmetricCroCo3DStereo (
                 pos = torch.cat((pos, add_pose), dim=1)
 
         # adding for extrinsics
-        if extrinsics_embed is not None:
+        if extrinsics_embed is not None and self.use_extrinsics:
             if self.extrinsics_embed_type == 'linerar':
                 x = x + extrinsics_embed
             elif self.extrinsics_embed_type == 'token':
@@ -196,6 +200,8 @@ class AsymmetricCroCo3DStereo (
         shape1 = view1.get('true_shape', torch.tensor(img1.shape[-2:])[None].repeat(B, 1))
         shape2 = view2.get('true_shape', torch.tensor(img2.shape[-2:])[None].repeat(B, 1))
         # warning! maybe the images have different portrait/landscape orientations
+
+        if 
         
         # the thing is that it seems that they are concatenating the couple of images, rather then each single one
         # therefore probably I should do the same for the intrinsics and extrinsics
