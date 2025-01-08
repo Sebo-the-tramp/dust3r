@@ -205,23 +205,26 @@ class AsymmetricCroCo3DStereo (
         # therefore probably I should do the same for the intrinsics and extrinsics
         intrinsics1 = view1.get('camera_intrinsics', None)
         intrinsics2 = view2.get('camera_intrinsics', None)
+        intrinsics_embed1 = None
+        intrinsics_embed2 = None
 
         extrinsics1 = view1.get('camera_pose', None)
         extrinsics2 = view2.get('camera_pose', None)
-
+        extrinsics_embed1 = None
+        extrinsics_embed2 = None
         
-        if intrinsics1 is not None:            
+        if intrinsics1 is not None and self.use_intrinsics:            
             intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1))[::2]
         else:
             print("ATTENTION intrinsics are not being used")
-        if intrinsics2 is not None:
+        if intrinsics2 is not None and self.use_intrinsics:
             intrinsics_embed2 = self.intrinsic_encoder(intrinsics2.flatten(1))[::2]
 
-        if extrinsics1 is not None:            
+        if extrinsics1 is not None and self.use_extrinsics:            
             extrinsics_embed1 = self.extrinsic_encoder(extrinsics1.flatten(1))[::2]
         else:
             print("ATTENTION extrinsics are not being used")
-        if extrinsics2 is not None:
+        if extrinsics2 is not None and self.use_extrinsics:
             extrinsics_embed2 = self.extrinsic_encoder(extrinsics2.flatten(1))[::2]
 
         if is_symmetrized(view1, view2):
@@ -270,13 +273,14 @@ class AsymmetricCroCo3DStereo (
 
         # here we need to remove stuff that is not needed, only used to encode the cam parameters
         # only remove stuff if it was added at the beginning
-        if(view1.get('camera_intrinsics', None) is not None):            
+        if(view1.get('camera_intrinsics', None) is not None and self.use_intrinsics):            
             if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
                 dec1, dec2 = list(dec1), list(dec2)
                 for i in range(len(dec1)):
                     dec1[i] = dec1[i][:, :-1]
                     dec2[i] = dec2[i][:, :-1]
 
+        if(view1.get('camera_pose', None) is not None and self.use_extrinsics):
             if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
                 dec1, dec2 = list(dec1), list(dec2)
                 for i in range(len(dec1)):
