@@ -61,6 +61,8 @@ class ARKitScenes(BaseStereoViewDataset):
 
             rgb_image, depthmap, intrinsics = self._crop_resize_if_necessary(
                 rgb_image, depthmap, intrinsics, resolution, rng=rng, info=view_idx)
+            
+            assert intrinsics[0][1] == 0
 
             views.append(dict(
                 img=rgb_image,

@@ -9,6 +9,7 @@ import torch
 from torch import nn
 
 import os
+import time
 from packaging import version
 import huggingface_hub
 
@@ -54,7 +55,7 @@ class AsymmetricCroCo3DStereo (
 ):
     """ Two siamese encoders, followed by two decoders.
     The goal is to output 3d points directly, both images in view1's frame
-    (hence the asymmetry).   
+    (hence the asymmetry). -> understood the asymmetry
     """
 
     def __init__(self,
@@ -87,7 +88,10 @@ class AsymmetricCroCo3DStereo (
         self.intrinsics_embed_type = "token"
         self.extrinsics_embed_type = "token"
 
-        self.intrinsic_encoder = nn.Linear(9, 1024) # fx, fy, cx, cy, k1, k2, p1, p2, k3 or is the 3x3 matrix
+        # self.intrinsic_encoder = nn.Linear(4, 1024) # fx, fy, cx, cy only 4 should be enough
+        # best would be 6, so that the patch encoder also should understand the rotation fx, fy, cx, cy and the positions
+        self.intrinsic_encoder = nn.Linear(6, 1024) # fx, fy, cx, cy, k1, k2, p1, p2, k3 or is the 3x3 matrix
+        # self.intrinsic_encoder = nn.Linear(9, 1024) # fx, fy, cx, cy, k1, k2, p1, p2, k3 or is the 3x3 matrix
         self.extrinsic_encoder = nn.Linear(16, 1024) # quaternion + translation, 4 + 3 -> xyzw, + tx,ty,tz (it is actually 4x4 homogeneus matrix)
 
     @classmethod
@@ -146,6 +150,8 @@ class AsymmetricCroCo3DStereo (
         x, pos = self.patch_embed(image, true_shape=true_shape)
         # torch.Size([4, 196, 1024])
 
+        # x -> torch.Size([32, 768, 1024])
+        
         
         # adding for intrinsics
         if intrinsics_embed is not None and self.use_intrinsics:
@@ -175,6 +181,7 @@ class AsymmetricCroCo3DStereo (
             x = blk(x, pos)
 
         x = self.enc_norm(x)
+        # x.shape -> torch.Size([32, 770, 1024])
         return x, pos, None
 
     def _encode_image_pairs(self, img1, img2, true_shape1, true_shape2, intrinsics_embed1=None, intrinsics_embed2=None, extrinsics_embed1=None, extrinsics_embed2=None):
@@ -211,14 +218,41 @@ class AsymmetricCroCo3DStereo (
         extrinsics1 = view1.get('camera_pose', None)
         extrinsics2 = view2.get('camera_pose', None)
         extrinsics_embed1 = None
-        extrinsics_embed2 = None
-        
+        extrinsics_embed2 = None        
+
         if intrinsics1 is not None and self.use_intrinsics:            
-            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1))[::2]
+
+
+            # intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1)[:,:6])[::2]
+
+            # # test code for speed up
+            # intrinsics_embed1_test = self.intrinsic_encoder(intrinsics1[:,::2].flatten()[:,:6])        
+
+            # Optimized code
+            # start_time = time.time()
+            # intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:, :6])
+            # time_optimized = time.time() - start_time
+
+            # # Original code
+            # start_time = time.time()
+            # intrinsics_embed1 = self.intrinsic_encoder(intrinsics1.flatten(1)[:, :6])[::2]
+            # time_original = time.time() - start_time
+            
+            # # Check if the results are the same
+            # are_equal = torch.allclose(intrinsics_embed1, intrinsics_embed1_test, atol=1e-2)
+            # print("\nAre the results the same?", are_equal)
+
+            # are_identical = torch.equal(intrinsics_embed1, intrinsics_embed1_test)
+            # print("Are tensors bitwise identical?", are_identical)
+
+            # # Timing comparison
+            # print("\nTime for original method: {:.6f} seconds".format(time_original))
+            # print("Time for optimized method: {:.6f} seconds".format(time_optimized))
+            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:, :6])            
         else:
             print("ATTENTION intrinsics are not being used")
         if intrinsics2 is not None and self.use_intrinsics:
-            intrinsics_embed2 = self.intrinsic_encoder(intrinsics2.flatten(1))[::2]
+            intrinsics_embed2 = self.intrinsic_encoder(intrinsics2[::2, :].flatten(1)[:,:6])
 
         if extrinsics1 is not None and self.use_extrinsics:            
             extrinsics_embed1 = self.extrinsic_encoder(extrinsics1.flatten(1))[::2]
@@ -273,19 +307,22 @@ class AsymmetricCroCo3DStereo (
 
         # here we need to remove stuff that is not needed, only used to encode the cam parameters
         # only remove stuff if it was added at the beginning
-        if(view1.get('camera_intrinsics', None) is not None and self.use_intrinsics):            
-            if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
-                dec1, dec2 = list(dec1), list(dec2)
-                for i in range(len(dec1)):
-                    dec1[i] = dec1[i][:, :-1]
-                    dec2[i] = dec2[i][:, :-1]
 
-        if(view1.get('camera_pose', None) is not None and self.use_extrinsics):
-            if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
-                dec1, dec2 = list(dec1), list(dec2)
-                for i in range(len(dec1)):
-                    dec1[i] = dec1[i][:, :-1]
-                    dec2[i] = dec2[i][:, :-1]
+        # Where does this gets wrong?
+
+        # if(view1.get('camera_intrinsics', None) is not None and self.use_intrinsics):            
+        #     if self.intrinsics_embed_loc == 'encoder' and self.intrinsics_embed_type == 'token':
+        #         dec1, dec2 = list(dec1), list(dec2)
+        #         for i in range(len(dec1)):
+        #             dec1[i] = dec1[i][:, :-1]
+        #             dec2[i] = dec2[i][:, :-1]
+
+        # if(view1.get('camera_pose', None) is not None and self.use_extrinsics):
+        #     if self.extrinsics_embed_loc == 'encoder' and self.extrinsics_embed_type == 'token':
+        #         dec1, dec2 = list(dec1), list(dec2)
+        #         for i in range(len(dec1)):
+        #             dec1[i] = dec1[i][:, :-1]
+        #             dec2[i] = dec2[i][:, :-1]
 
         with torch.cuda.amp.autocast(enabled=False):
             res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
