@@ -248,7 +248,7 @@ class AsymmetricCroCo3DStereo (
             # # Timing comparison
             # print("\nTime for original method: {:.6f} seconds".format(time_original))
             # print("Time for optimized method: {:.6f} seconds".format(time_optimized))
-            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:, :6])            
+            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:,:6])            
         else:
             print("ATTENTION intrinsics are not being used")
         if intrinsics2 is not None and self.use_intrinsics:
@@ -325,8 +325,14 @@ class AsymmetricCroCo3DStereo (
         #             dec2[i] = dec2[i][:, :-1]
 
         with torch.cuda.amp.autocast(enabled=False):
-            res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
-            res2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)
+            res1, _int1, _ext1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
+            res2, _int2, _ext2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)            
+
+        res1['camera_pose'] = _ext1
+        res2['camera_pose'] = _ext2
+
+        res1['camera_intrinsics'] = _int1
+        res2['camera_intrinsics'] = _int2
 
         res2['pts3d_in_other_view'] = res2.pop('pts3d')  # predict view2's pts3d in view1's frame
         return res1, res2
