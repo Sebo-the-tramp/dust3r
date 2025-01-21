@@ -44,7 +44,7 @@ class DPTOutputAdapter_fix(DPTOutputAdapter):
         layers = [encoder_tokens[hook] for hook in self.hooks]
 
         # Extract only task-relevant tokens and ignore global tokens.
-        layers = [self.adapt_tokens(l) for l in layers]
+        layers = [self.adapt_tokens(l, N_H, N_W) for l in layers]
 
         # Reshape tokens to spatial representation
         layers = [rearrange(l, 'b (nh nw) c -> b c nh nw', nh=N_H, nw=N_W) for l in layers]

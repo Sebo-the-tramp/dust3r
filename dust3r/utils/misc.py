@@ -76,15 +76,18 @@ def transpose_to_landscape(head, activate=True):
         if is_landscape.all():
             return head(decout, (H, W))
         if is_portrait.all():
-            pts3d, _int, _ext = head(decout, (W, H))
-            return transposed(pts3d), _int, _ext
+            # pts3d, _int, _ext = head(decout, (W, H))
+            # return transposed(pts3d), _int, _ext
+            return transposed(head(decout, (W, H)))
 
         # batch is a mix of both portraint & landscape
         def selout(ar): return [d[ar] for d in decout]
-        l_result, l_int, l_ext = head(selout(is_landscape), (H, W))
+        # l_result, l_int, l_ext = head(selout(is_landscape), (H, W))
+        l_result = head(selout(is_landscape), (H, W))
 
-        # because of the multiple things in the resuls
-        dict_result, p_int, p_ext = head(selout(is_portrait), (W, H))
+        # because of the multiple things in the results
+        # dict_result, p_int, p_ext = head(selout(is_portrait), (W, H))
+        dict_result = head(selout(is_portrait), (W, H))
         p_result = transposed(dict_result)
 
         # allocate full result
@@ -95,23 +98,26 @@ def transpose_to_landscape(head, activate=True):
             x[is_portrait] = p_result[k]
             result[k] = x
 
-        # Merge _ext and _int
-        merged_ext = l_ext.new(B, *l_ext.shape[1:])
-        merged_int = l_int.new(B, *l_int.shape[1:])
+        # # Merge _ext and _int
+        # merged_ext = l_ext.new(B, *l_ext.shape[1:])
+        # merged_int = l_int.new(B, *l_int.shape[1:])
         
-        merged_ext[is_landscape] = l_ext
-        merged_ext[is_portrait] = p_ext
+        # merged_ext[is_landscape] = l_ext
+        # merged_ext[is_portrait] = p_ext
 
-        merged_int[is_landscape] = l_int
-        merged_int[is_portrait] = p_int
+        # merged_int[is_landscape] = l_int
+        # merged_int[is_portrait] = p_int
 
-        return result, merged_int, merged_ext
+        # return result, merged_int, merged_ext
+        return result
 
     return wrapper_yes if activate else wrapper_no
 
 
 def transposed(dic):
-    return {k: v.swapaxes(1, 2) for k, v in dic.items()}
+    skip_keys = ["camera_pose", "camera_intrinsics"]
+    return {k: v if k in skip_keys else v.swapaxes(1, 2) for k, v in dic.items()}
+    # return {k: v.swapaxes(1, 2) for k, v in dic.items()}
 
 
 def invalid_to_nans(arr, valid_mask, ndim=999):

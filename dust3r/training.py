@@ -35,6 +35,8 @@ import dust3r.utils.path_to_croco  # noqa: F401
 import croco.utils.misc as misc  # noqa
 from croco.utils.misc import NativeScalerWithGradNormCount as NativeScaler  # noqa
 
+# import torch._dynamo
+# torch._dynamo.config.suppress_errors = True
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DUST3R training', add_help=False)
@@ -133,6 +135,9 @@ def train(args):
     # --test_criterion "Regr3D(L21, norm_mode='?avg_dis', gt_scale=True, sky_loss_value=0) + -1.*MatchingLoss(APLoss(nq='torch', fp=torch.float16), negatives_padding=12288)" \
     test_criterion = eval(args.test_criterion or args.criterion).to(device)
 
+    # maybe another day
+    # model = torch.compile(model, mode="reduce-overhead")
+
     model.to(device)
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
@@ -153,7 +158,9 @@ def train(args):
 
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(
+            # until I figure out why this #TODO
             model, device_ids=[args.gpu], find_unused_parameters=True, static_graph=True)
+            # model, device_ids=[args.gpu], find_unused_parameters=True, static_graph=True)
         model_without_ddp = model.module
 
     # following timm: set wd as 0 for bias and norm layers

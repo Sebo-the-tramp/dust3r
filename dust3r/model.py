@@ -68,6 +68,7 @@ class AsymmetricCroCo3DStereo (
                 patch_embed_cls='PatchEmbedDust3R',  # PatchEmbedDust3R or ManyAR_PatchEmbed
                 use_intrinsics=False,
                 use_extrinsics=False,
+                embedding_type='token',
                 **croco_kwargs):
         
         self.patch_embed_cls = patch_embed_cls
@@ -85,8 +86,8 @@ class AsymmetricCroCo3DStereo (
         self.intrinsics_embed_loc = "encoder"
         self.extrinsics_embed_loc = "encoder"
 
-        self.intrinsics_embed_type = "token"
-        self.extrinsics_embed_type = "token"
+        self.intrinsics_embed_type = embedding_type
+        self.extrinsics_embed_type = embedding_type
 
         # self.intrinsic_encoder = nn.Linear(4, 1024) # fx, fy, cx, cy only 4 should be enough
         # best would be 6, so that the patch encoder also should understand the rotation fx, fy, cx, cy and the positions
@@ -156,7 +157,7 @@ class AsymmetricCroCo3DStereo (
         # adding for intrinsics
         if intrinsics_embed is not None and self.use_intrinsics:
             if self.intrinsics_embed_type == 'linear':
-                x = x + intrinsics_embed
+                x = x + intrinsics_embed.unsqueeze(1)
             elif self.intrinsics_embed_type == 'token':
                 x = torch.cat((x, intrinsics_embed.unsqueeze(1)), dim=1)
                 add_pose = pos[:, 0:1, :].clone()
@@ -165,8 +166,8 @@ class AsymmetricCroCo3DStereo (
 
         # adding for extrinsics
         if extrinsics_embed is not None and self.use_extrinsics:
-            if self.extrinsics_embed_type == 'linerar':
-                x = x + extrinsics_embed
+            if self.extrinsics_embed_type == 'linear':
+                x = x + extrinsics_embed.unsqueeze(1)
             elif self.extrinsics_embed_type == 'token':
                 x = torch.cat((x, extrinsics_embed.unsqueeze(1)), dim=1)
                 add_pose = pos[:, 0:1, :].clone()
@@ -248,7 +249,7 @@ class AsymmetricCroCo3DStereo (
             # # Timing comparison
             # print("\nTime for original method: {:.6f} seconds".format(time_original))
             # print("Time for optimized method: {:.6f} seconds".format(time_optimized))
-            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:,:6])            
+            intrinsics_embed1 = self.intrinsic_encoder(intrinsics1[::2, :].flatten(1)[:,:6]) 
         else:
             print("ATTENTION intrinsics are not being used")
         if intrinsics2 is not None and self.use_intrinsics:
@@ -325,14 +326,16 @@ class AsymmetricCroCo3DStereo (
         #             dec2[i] = dec2[i][:, :-1]
 
         with torch.cuda.amp.autocast(enabled=False):
-            res1, _int1, _ext1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
-            res2, _int2, _ext2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)            
+            # res1, _int1, _ext1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
+            # res2, _int2, _ext2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)            
+            res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
+            res2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)            
 
-        res1['camera_pose'] = _ext1
-        res2['camera_pose'] = _ext2
+        # res1['camera_pose'] = _ext1
+        # res2['camera_pose'] = _ext2
 
-        res1['camera_intrinsics'] = _int1
-        res2['camera_intrinsics'] = _int2
+        # res1['camera_intrinsics'] = _int1
+        # res2['camera_intrinsics'] = _int2
 
         res2['pts3d_in_other_view'] = res2.pop('pts3d')  # predict view2's pts3d in view1's frame
         return res1, res2

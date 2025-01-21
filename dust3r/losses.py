@@ -12,7 +12,6 @@ from dust3r.inference import get_pred_pts3d, find_opt_scaling
 from dust3r.utils.geometry import inv, geotrf, normalize_pointcloud
 from dust3r.utils.geometry import get_joint_pointcloud_depth, get_joint_pointcloud_center_scale
 
-
 def Sum(*losses_and_masks):
     loss, mask = losses_and_masks[0]
     if loss.ndim > 0:
@@ -239,7 +238,7 @@ class ConfLoss (MultiLoss):
         conf_loss2 = conf_loss2.mean() if conf_loss2.numel() > 0 else 0
 
         return conf_loss1 + conf_loss2, dict(conf_loss_1=float(conf_loss1), conf_loss2=float(conf_loss2), **details)
-
+    
 
 class Regr3D_ShiftInv (Regr3D):
     """ Same than Regr3D but invariant to depth shift.
