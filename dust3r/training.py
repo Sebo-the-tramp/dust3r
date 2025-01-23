@@ -90,7 +90,6 @@ def get_args_parser():
     parser.add_argument('--output_dir', default='./output/', type=str, help="path where to save the output")
     return parser
 
-
 def train(args):
     misc.init_distributed_mode(args)
     global_rank = misc.get_rank()
@@ -141,6 +140,11 @@ def train(args):
     model.to(device)
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
+
+       # Freeze all layers that contain "enc_blocks" in their names
+    for name, param in model.named_parameters():
+        if "enc_blocks" in name:  # Check if "enc_blocks" is in the layer name
+            param.requires_grad = False
 
     if args.pretrained and not args.resume:
         print('Loading pretrained: ', args.pretrained)
@@ -305,12 +309,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         loss_tuple = loss_of_one_batch(batch, model, criterion, device,
                                        symmetrize_batch=True,
-                                       use_amp=bool(args.amp), ret='loss')
+                                       use_amp=bool(args.amp), ret='loss')        
         loss, loss_details = loss_tuple  # criterion returns two values
         loss_value = float(loss)
 
         if not math.isfinite(loss_value):
-            print("Loss is {}, stopping training".format(loss_value), force=True)
+            print("Loss is {}, stopping training {}".format(loss_value, loss_details), force=True)
             sys.exit(1)
 
         loss /= accum_iter
